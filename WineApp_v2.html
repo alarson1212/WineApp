@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wine Scanner</title>
+    <!-- Web App Manifest for iOS PWA -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+        button, input { margin-top: 10px; padding: 12px; width: 100%; box-sizing: border-box; font-size: 16px; }
+        #results { margin-top: 20px; background: #f9f9f9; padding: 15px; border-radius: 8px; }
+        .wine-item { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+
+    <h2>Wine Menu Scanner</h2>
+    <!-- The 'capture' attribute prompts the native camera on iOS -->
+    <input type="file" id="imageInput" accept="image/*" capture="environment">
+    <button id="scanBtn" onclick="analyzeMenu()">Scan Menu with Gemini</button>
+    <div id="status"></div>
+    <div id="results"></div>
+
+    <script>
+        // 1. Initialize Dexie DB
+        const db = new Dexie('WineAppDB');
+        db.version(1).stores({
+            tastings: '++id, date, name, varietal, rating, source',
+            cellar: '++id, purchaseDate, name, varietal, price, rating'
+        });
+
+        // 2. API Key Management via Local Storage
+        function getApiKey() {
+            let apiKey = localStorage.getItem('gemini_api_key');
+            if (!apiKey) {
+                apiKey = prompt("Please enter your Gemini API Key:");
+                if (apiKey) localStorage.setItem('gemini_api_key', apiKey);
+            }
+            return apiKey;
+        }
+
+        // 3. Convert Image to Base64
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result.split(',')[1]); 
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // 4. Analyze Menu with Gemini API
+        async function analyzeMenu() {
+            const apiKey = getApiKey();
+            if (!apiKey) return alert("API Key is required.");
+
+            const fileInput = document.getElementById('imageInput');
+            if (!fileInput.files || fileInput.files.length === 0) {
+                return alert("Please select or take a photo first.");
+            }
+
+            const statusEl = document.getElementById('status');
+            const resultsEl = document.getElementById('results');
+            statusEl.innerText = "Processing image...";
+            resultsEl.innerHTML = "";
+
+            try {
+                const base64Image = await fileToBase64(fileInput.files[0]);
+                const mimeType = fileInput.files[0].type;
+
+                // Send inline image data directly to the generateContent endpoint
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: "Analyze this wine menu. Return a strict JSON array of objects, where each object has 'name', 'varietal', 'region', and 'price' keys. Do not include markdown formatting or backticks." },
+                                { inlineData: { mimeType: mimeType, data: base64Image } }
+                            ]
+                        }]
+                    })
+                });
+
+                const data = await response.json();
+                statusEl.innerText = "";
+                
+                if (data.error) throw new Error(data.error.message);
+
+                // Parse the JSON text returned by Gemini
+                const rawText = data.candidates[0].content.parts[0].text;
+                const wines = JSON.parse(rawText.trim()); 
+                
+                displayResults(wines);
+            } catch (error) {
+                console.error(error);
+                statusEl.innerText = "Error analyzing menu. Check console.";
+            }
+        }
+
+        // 5. Display and Save Results
+        function displayResults(wines) {
+            const resultsEl = document.getElementById('results');
+            wines.forEach(wine => {
+                const div = document.createElement('div');
+                div.className = 'wine-item';
+                div.innerHTML = `
+                    <strong>${wine.name || 'Unknown'}</strong> (${wine.varietal || 'Unknown Varietal'})<br>
+                    Region: ${wine.region || 'N/A'} | Price: ${wine.price || 'N/A'}<br>
+                    <button onclick='saveTasting(${JSON.stringify(wine)})'>Save to Tastings DB</button>
+                `;
+                resultsEl.appendChild(div);
+            });
+        }
+
+        // 6. Write to IndexedDB
+        async function saveTasting(wine) {
+            await db.tastings.add({
+                date: new Date().toISOString().split('T')[0],
+                name: wine.name,
+                varietal: wine.varietal,
+                region: wine.region,
+                price: wine.price,
+                rating: null, 
+                source: "Menu Scan"
+            });
+            alert(`${wine.name} saved!`);
+        }
+    </script>
+</body>
+</html>
