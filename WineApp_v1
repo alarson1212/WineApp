@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wine Tracker</title>
+    <!-- Import Dexie.js via CDN -->
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+</head>
+<body>
+
+<script>
+    // 1. Initialize the Database
+    const db = new Dexie('WineAppDB');
+
+    // 2. Define the Schema
+    // ++id is an auto-incrementing primary key. 
+    // The other listed properties are indexed for fast querying.
+    db.version(1).stores({
+        tastings: '++id, date, name, varietal, rating, source', // For restaurant/bar glasses
+        cellar: '++id, purchaseDate, name, varietal, price, rating' // For bottles bought for home
+    });
+
+    // 3. Helper Functions to Add Data
+    async function addTasting(wineData) {
+        try {
+            await db.tastings.add(wineData);
+            console.log("Tasting saved successfully!");
+        } catch (error) {
+            console.error("Error saving tasting: ", error);
+        }
+    }
+
+    async function addCellarBottle(bottleData) {
+        try {
+            await db.cellar.add(bottleData);
+            console.log("Cellar bottle saved successfully!");
+        } catch (error) {
+            console.error("Error saving cellar bottle: ", error);
+        }
+    }
+
+    // 4. Test the Database Setup (Check your browser console!)
+    async function testDB() {
+        await addTasting({
+            date: new Date().toISOString().split('T')[0],
+            name: "Martín Códax",
+            varietal: "Albariño",
+            rating: 4.5,
+            source: "Restaurant",
+            notes: "Crisp, dry, very refreshing."
+        });
+
+        await addCellarBottle({
+            purchaseDate: new Date().toISOString().split('T')[0],
+            name: "Catena Zapata",
+            varietal: "Malbec Gran Reserva",
+            price: 45.00,
+            rating: 5,
+            notes: "Full-bodied, dark fruit, excellent structure."
+        });
+        
+        // Fetch and log to verify
+        const allTastings = await db.tastings.toArray();
+        console.log("Saved Tastings:", allTastings);
+    }
+
+    // Run the test
+    testDB();
+</script>
+
+</body>
+</html>
