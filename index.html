@@ -97,7 +97,7 @@
                 displayResults(wines);
             } catch (error) {
                 console.error(error);
-                statusEl.innerText = "Error analyzing menu. Check console.";
+                statusEl.innerText = "Error: " + error.message;
             }
         }
 
